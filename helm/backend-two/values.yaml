@@ -1,0 +1,77 @@
+replicaCount: $(BACKEND_TWO_REPLICA_COUNT)
+
+image:
+  repository: "$(BACKEND_TWO_IMAGE_URI)"
+  tag: "$(IMAGE_TAG)"
+  pullPolicy: Always
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: false
+  name: ""
+  annotations: {}
+  automount: false
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  name: backend-two-service
+  type: ClusterIP
+  port: 80
+  targetPort: $(BACKEND_TWO_PORT)
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  paths: []
+
+resources:
+  requests:
+    cpu: "$(BACKEND_TWO_CPU)"
+    memory: "$(BACKEND_TWO_MEMORY)"
+  limits:
+    cpu: "$(BACKEND_TWO_CPU)"
+    memory: "$(BACKEND_TWO_MEMORY)"
+
+autoscaling:
+  enabled: $(BACKEND_TWO_AUTOSCALING_ENABLED)
+  minReplicas: $(BACKEND_TWO_MIN_REPLICAS)
+  maxReplicas: $(BACKEND_TWO_MAX_REPLICAS)
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+health:
+  livenessPath: /api/service-two/health/live
+  readinessPath: /api/service-two/health/ready
+
+configVersion: "$(IMAGE_TAG)"
+
+app:
+  environment: "$(ENVIRONMENT)"
+  name: backend-two
+  secretName: backend-two-env
+  namespace: "$(K8S_NAMESPACE)"

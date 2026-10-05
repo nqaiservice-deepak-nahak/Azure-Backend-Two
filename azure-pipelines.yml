@@ -1,0 +1,27 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Validate
+    displayName: Validate application build
+
+    jobs:
+      - job: Build
+        displayName: Build NestJS application
+
+        steps:
+          - checkout: self
+
+          - task: NodeTool@0
+            displayName: Use Node.js 22
+            inputs:
+              versionSpec: "22.x"
+
+          - script: |
+              set -e
+              npm ci
+              npm run build
+            displayName: Install dependencies and build
