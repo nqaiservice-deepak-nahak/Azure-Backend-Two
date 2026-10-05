@@ -9,7 +9,7 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-  - group: backend-one-variables
+  - group: backend-two-variables
 
 stages:
 
@@ -18,7 +18,7 @@ stages:
 # ============================================================
 
 - stage: Build
-  displayName: Build and Push Backend One
+  displayName: Build and Push Backend Two
 
   jobs:
     - job: BuildPush
@@ -45,32 +45,37 @@ stages:
             azureSubscription: 'sc-azure-aks-microservices'
             scriptType: bash
             scriptLocation: inlineScript
-
             inlineScript: |
               set -e
+
+              echo "Logging into ACR..."
 
               az acr login \
                 --name $(ACR_NAME)
 
+              echo "Building Backend Two image..."
+
               docker build \
-                -t $(BACKEND_ONE_IMAGE_URI):$(Build.BuildId) \
+                -t $(BACKEND_TWO_IMAGE_URI):$(Build.BuildId) \
                 .
 
+              echo "Pushing Backend Two image..."
+
               docker push \
-                $(BACKEND_ONE_IMAGE_URI):$(Build.BuildId)
+                $(BACKEND_TWO_IMAGE_URI):$(Build.BuildId)
 
 # ============================================================
 # DEPLOY
 # ============================================================
 
 - stage: Deploy
-  displayName: Deploy Backend One to AKS
+  displayName: Deploy Backend Two to AKS
 
   dependsOn: Build
 
   jobs:
-    - job: DeployBackendOne
-      displayName: Helm Deploy Backend One
+    - job: DeployBackendTwo
+      displayName: Helm Deploy Backend Two
 
       steps:
         - checkout: self
@@ -81,7 +86,7 @@ stages:
             helmVersionToInstall: latest
 
         - task: AzureCLI@2
-          displayName: Deploy Backend One
+          displayName: Deploy Backend Two
           inputs:
             azureSubscription: 'sc-azure-aks-microservices'
             scriptType: bash
@@ -97,57 +102,61 @@ stages:
                 --name $(AKS_CLUSTER_NAME) \
                 --overwrite-existing
 
+              echo "Creating namespace if required..."
+
               kubectl create namespace $(K8S_NAMESPACE) \
                 --dry-run=client \
                 -o yaml | kubectl apply -f -
 
               # ------------------------------------------------
-              # Production environment
+              # Create production environment file
               # ------------------------------------------------
 
-              ENV_FILE="$(Agent.TempDirectory)/backend-one.env.prod"
+              ENV_FILE="$(Agent.TempDirectory)/backend-two.env.prod"
 
               cat > "$ENV_FILE" <<EOF
-              APP_PORT=$(BACKEND_ONE_PORT)
-              SERVICE_MESSAGE=$(BACKEND_ONE_MESSAGE)
+              APP_PORT=$(BACKEND_TWO_PORT)
+              SERVICE_MESSAGE=$(BACKEND_TWO_MESSAGE)
               ENVIRONMENT=$(ENVIRONMENT)
               EOF
 
-              kubectl create secret generic backend-one-env \
+              echo "Creating/updating Kubernetes Secret..."
+
+              kubectl create secret generic backend-two-env \
                 --namespace $(K8S_NAMESPACE) \
                 --from-file=.env.prod="$ENV_FILE" \
                 --dry-run=client \
                 -o yaml | kubectl apply -f -
 
               # ------------------------------------------------
-              # Helm values
+              # Generate CI Helm override values
               # ------------------------------------------------
 
-              VALUES_FILE="$(Agent.TempDirectory)/backend-one-values.yaml"
+              VALUES_FILE="$(Agent.TempDirectory)/backend-two-values.yaml"
 
               cat > "$VALUES_FILE" <<EOF
-              replicaCount: $(BACKEND_ONE_REPLICA_COUNT)
+              replicaCount: $(BACKEND_TWO_REPLICA_COUNT)
 
               image:
-                repository: "$(BACKEND_ONE_IMAGE_URI)"
+                repository: "$(BACKEND_TWO_IMAGE_URI)"
                 tag: "$(Build.BuildId)"
                 pullPolicy: Always
 
               service:
-                targetPort: $(BACKEND_ONE_PORT)
+                targetPort: $(BACKEND_TWO_PORT)
 
               resources:
                 requests:
-                  cpu: "$(BACKEND_ONE_CPU)"
-                  memory: "$(BACKEND_ONE_MEMORY)"
+                  cpu: "$(BACKEND_TWO_CPU)"
+                  memory: "$(BACKEND_TWO_MEMORY)"
                 limits:
-                  cpu: "$(BACKEND_ONE_CPU)"
-                  memory: "$(BACKEND_ONE_MEMORY)"
+                  cpu: "$(BACKEND_TWO_CPU)"
+                  memory: "$(BACKEND_TWO_MEMORY)"
 
               autoscaling:
-                enabled: $(BACKEND_ONE_AUTOSCALING_ENABLED)
-                minReplicas: $(BACKEND_ONE_MIN_REPLICAS)
-                maxReplicas: $(BACKEND_ONE_MAX_REPLICAS)
+                enabled: $(BACKEND_TWO_AUTOSCALING_ENABLED)
+                minReplicas: $(BACKEND_TWO_MIN_REPLICAS)
+                maxReplicas: $(BACKEND_TWO_MAX_REPLICAS)
                 targetCPUUtilizationPercentage: 80
 
               configVersion: "$(Build.BuildId)"
@@ -160,27 +169,24 @@ stages:
               echo "Validating Helm chart..."
 
               helm lint \
-                helm/backend-one \
+                helm/backend-two \
                 -f "$VALUES_FILE"
 
-              echo "Deploying Backend One..."
+              echo "Deploying Backend Two..."
 
-              helm upgrade --install backend-one \
-                helm/backend-one \
+              helm upgrade --install backend-two \
+                helm/backend-two \
                 --namespace $(K8S_NAMESPACE) \
                 -f "$VALUES_FILE" \
                 --wait \
                 --timeout 5m
 
-              echo "Deployment status:"
+              echo "Backend Two deployment status:"
 
               kubectl get pods \
                 -n $(K8S_NAMESPACE)
 
-              kubectl get services \
-                -n $(K8S_NAMESPACE)
-
-              kubectl get ingress \
+              kubectl get service backend-two-service \
                 -n $(K8S_NAMESPACE)
 
               kubectl get hpa \
